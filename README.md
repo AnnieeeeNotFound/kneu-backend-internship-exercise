@@ -146,3 +146,36 @@ If you’d like, include a short note describing:
 - Your overall approach
 - Any trade-offs or assumptions
 - What you would improve or add with more time
+
+---
+
+## Implementation Notes — Prescriptions
+
+### Approach
+
+The prescriptions feature is self-contained in the `com.kneu.medications.prescription` package and mirrors the shape of the provided medications code, extended with the layers a writable feature needs:
+
+- `Prescription` — JPA entity; `@ManyToOne` reference to `Medication`, `timeOfDay` (`LocalTime`), optional `label`
+- `PrescriptionRepository` — Spring Data interface
+- `PrescriptionService` — owns the business rules and validation, so the controller stays thin
+- `PrescriptionController` — `POST /prescriptions` (201 + `Location` header), `GET /prescriptions`, `GET /prescriptions/{id}`
+- `CreatePrescriptionRequest` / `PrescriptionResponse` — records decoupling the API contract from the persistence model
+- `com.kneu.medications.error` — a `@RestControllerAdvice` renders every error as `{"error": ..., "message": ...}` (404 for unknown medication/prescription, 400 for invalid input including malformed JSON), instead of Spring Boot's default error format
+
+Errors are expressed with two small domain exceptions (`NotFoundException`, `InvalidRequestException`) mapped centrally in the handler, keeping try/catch out of the business code.
+
+### Assumptions
+
+- **Scope**: create + read (list and by-id) only, per the brief. Update/delete would follow the same patterns.
+- **Time format**: `timeOfDay` is accepted as ISO time (`"08:00"` or `"08:00:00"`); anything unparseable is rejected with 400.
+- **Label**: optional; blank is treated as absent (and omitted from responses); capped at 100 characters to keep it a short nickname.
+- **Medication reference**: validated on creation; no cascade or deep invariants (e.g. deleting a medication that is prescribed) — out of scope, noted below.
+- **Schema**: the `prescriptions` table is created by Hibernate `ddl-auto: update`, consistent with how the starter is configured; in production I would prefer explicit migrations (e.g. Flyway).
+
+### With more time
+
+- Integration tests against real PostgreSQL (e.g. Testcontainers) instead of H2
+- Deduplication rule (same medication + same time) or conflict feedback
+- Day-of-week / date ranges so prescriptions can express more than a daily time
+- `PATCH` for label/time edits and soft-delete for history retention
+- Pagination on the list endpoint
